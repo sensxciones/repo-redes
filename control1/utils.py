@@ -3,7 +3,6 @@ import socket
 
 # Recibe un msj HTTP en bytes, lo parsea y devuelve una estructura de datos con la información relevante del mensaje HTTP (método, ruta, headers, body, etc.)
 def parse_http_message(http_message):
-
     lines = http_message.split("\r\n")
     request_line = lines[0].split(" ")
     method = request_line[0]  # método HTTP (GET, POST, etc.)
