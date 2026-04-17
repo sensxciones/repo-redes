@@ -4,11 +4,11 @@ from dnslib import DNSRecord
 from dnslib.dns import QTYPE
 
 # Natalia:
-# IP VM: 192.168.64.3
-# IP HOST: 192.168.64.1
+# IP VM: 192.168.64.1
+# IP HOST: 192.168.64.3
 
-IP_HOST = "192.168.64.1"
-IP_VM = "192.168.64.3"
+IP_HOST = "192.168.64.3"
+IP_VM = "192.168.64.1"
 
 
 # Programe una función para parsear mensajes DNS, que sea capaz de tomar un mensaje DNS y transformarlo
@@ -76,6 +76,8 @@ def parser_dns_message(message_bytes):
 SERVER_ADDRESS = "192.33.4.12"
 SERVER_PORT = 53
 BUFFER_SIZE = 4096
+cache_dominios = {}
+ultimas_consultas = []
 
 
 def send_dns_query(query, ip):
@@ -127,16 +129,21 @@ def resolver(mensaje_consulta, server=SERVER_ADDRESS):
         return None
 
     # Parseamos la respuesta a la estructura de diccionario
-
     respuesta_parsed = parser_dns_message(respuesta_bytes)
     dominio = respuesta_parsed["qname"]
+
+    # logica el CACHE
+    # ¿esta qname en el cache?
+    # SI -> construir una respuesta "falsa" y enviar
+    # No -> se resuleve recursivamente, se obtiene IP reall, se registra en las ultimas_consultas, se ve las top 3
+    # y al final se envia la respuesta real
+
     print(f"(debug) Consultando '{dominio}' a '.' con dirección IP '{server}'\n")
     # Si el mensaje answer recibido tiene la respuesta a la consulta, es decir, viene alguna respuesta
     # de tipo A en la sección Answer del mensaje, entonces simplemente haga que su función retorne el
-    # mensaje recibido.
+    # mensaje recibido
 
     # vemos si hay respuesta tipo A en la seccion Answer
-
     if respuesta_parsed["ancount"] > 0 and is_there_answer_type_a(
         respuesta_parsed, "answers"
     ):
@@ -154,7 +161,6 @@ def resolver(mensaje_consulta, server=SERVER_ADDRESS):
         # dirección IP contenida en la sección Additional.
         if is_there_answer:
             # buscamos direccion IP en Additional
-            ip_add = ""
             for add in respuesta_parsed["additional"]:
                 if add["type"] == "A":
                     # si encontramos un match, consultamos la IP
@@ -174,10 +180,10 @@ def resolver(mensaje_consulta, server=SERVER_ADDRESS):
                     print(f"... Resolviendo NS: {ns}\n")
                     ns_ip = resolver_ns_recursivo(ns, mensaje_consulta)
                     if ns_ip:
-                        # print(f"(debug) Consultando '{name}' a ... con direcc IP del NS encontrada: {ns_ip}")
+                        print(
+                            f"(debug) Consultando '{name}' a ... con direcc IP del NS encontrada: {ns_ip}"
+                        )
                         return resolver(mensaje_consulta, server=ns_ip)
-                else:
-                    print("No hay respuesta\n")
     # Si recibe algún otro tipo de respuesta simplemente ignórela
     return None
 
@@ -186,7 +192,7 @@ def resolver(mensaje_consulta, server=SERVER_ADDRESS):
 # creamos un socket no orientado a conexión
 print(" ... Creando Socket ...\n")
 socket_resolver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-socket_address = (IP_HOST, 8000)
+socket_address = (IP_VM, 8000)
 
 # recordar descargar dnslib con pip install dnslib
 
