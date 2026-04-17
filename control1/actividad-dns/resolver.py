@@ -1,7 +1,5 @@
 import socket
 
-import dnslib
-import eol
 from dnslib import DNSRecord
 from dnslib.dns import QTYPE
 
@@ -122,7 +120,6 @@ def resolver_ns_recursivo(ns, msg_consulta):
 def resolver(mensaje_consulta, server=SERVER_ADDRESS):
     # Envíe el mensaje query al servidor raíz de DNS y espere su respuesta. Se recomienda dejar la IP del
     # servidor raíz en una variable global de su programa.
-    print(" .. Consultando servidor raiz ...\n")
     respuesta_bytes = send_dns_query(mensaje_consulta, server)
 
     if not respuesta_bytes:
@@ -130,8 +127,10 @@ def resolver(mensaje_consulta, server=SERVER_ADDRESS):
         return None
 
     # Parseamos la respuesta a la estructura de diccionario
-    respuesta_parsed = parser_dns_message(respuesta_bytes)
 
+    respuesta_parsed = parser_dns_message(respuesta_bytes)
+    dominio = respuesta_parsed["qname"]
+    print(f"(debug) Consultando '{dominio}' a '.' con dirección IP '{server}'\n")
     # Si el mensaje answer recibido tiene la respuesta a la consulta, es decir, viene alguna respuesta
     # de tipo A en la sección Answer del mensaje, entonces simplemente haga que su función retorne el
     # mensaje recibido.
@@ -142,14 +141,14 @@ def resolver(mensaje_consulta, server=SERVER_ADDRESS):
         respuesta_parsed, "answers"
     ):
         ip = get_rdata(respuesta_parsed)
-        print(f"... IP encontrada: {ip}\n")
+        print(f"(debug) Enviando respuesta a IP '{ip}'\n")
         return respuesta_bytes
 
     # Si la respuesta recibida corresponde a una delegación a otro Name Server, es decir, vienen
     # respuestas de tipo NS en la sección Authority, revise si viene alguna respuesta de tipo A en
     # la sección Additional.
     if respuesta_parsed["nscount"] > 0:
-        print("... Delegación a otro Name Server... \n")
+        # print("(debug) Delegación a otro Name Server\n")
         is_there_answer = is_there_answer_type_a(respuesta_parsed, "additional")
         # Si encuentra una respuesta tipo A, entonces envíe la query del paso a) a la primera
         # dirección IP contenida en la sección Additional.
@@ -158,21 +157,24 @@ def resolver(mensaje_consulta, server=SERVER_ADDRESS):
             ip_add = ""
             for add in respuesta_parsed["additional"]:
                 if add["type"] == "A":
+                    # si encontramos un match, consultamos la IP
                     ip_add = add["rdata"]
-                    print(f"... Consulta con IP de sección Additional: {ip_add} ...\n")
+                    name = add["name"]
+                    print(f"(debug) Consultando '{name}' con dirección IP'{ip_add}'\n")
                     return resolver(mensaje_consulta, server=ip_add)
 
         else:
             # Si no, tomamos el nombre de un Name Server desde la sección Authority y use recursivamente su función
             # para resolver la IP asociada al nombre de dominio del Name Server
-            print("... No hay IP en Additional ...\n")
+            # print("... No hay IP en Additional ...\n")
             for auth in respuesta_parsed["authority"]:
                 if auth["type"] == "NS":
                     ns = auth["rdata"]
+                    name = auth["name"]
                     print(f"... Resolviendo NS: {ns}\n")
                     ns_ip = resolver_ns_recursivo(ns, mensaje_consulta)
                     if ns_ip:
-                        print(f" ... IP del NS encontrada: {ns_ip}")
+                        # print(f"(debug) Consultando '{name}' a ... con direcc IP del NS encontrada: {ns_ip}")
                         return resolver(mensaje_consulta, server=ns_ip)
                 else:
                     print("No hay respuesta\n")
@@ -198,11 +200,7 @@ if __name__ == "__main__":
 
     while True:
         message_bytes, client_addres = socket_resolver.recvfrom(BUFFER_SIZE)
-        print(f"Longitud del mensaje: {len(message_bytes)}\n")
-        print(f"Mensaje(en bytes) recibido: \n{message_bytes}\n")
-        decoded_message_dns = parser_dns_message(message_bytes)
-        print(f"Mensaje DNS parseado en json: \n {decoded_message_dns}\n")
-
+        print(" ... Mensaje recibido ...\n")
         response_bytes = resolver(message_bytes)
         if response_bytes:
             socket_resolver.sendto(response_bytes, client_addres)
