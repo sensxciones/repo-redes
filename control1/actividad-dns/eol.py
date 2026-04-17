@@ -203,4 +203,6 @@ print_dns_reply_elements(dnslib_reply_2)
 # compare esta respuesta con la respuesta obteniida al preguntar por uchile.cl al resolver "8.8.8.8".
 # ¿Qué diferencias observa?
 
-# ================================================
+# ============================================================================================
+
+# ============================================================================================
