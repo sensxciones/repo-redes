@@ -7,9 +7,9 @@ def parse_http_message(http_message):
     request_line = lines[0].split(" ")
     method = request_line[0]  # método HTTP (GET, POST, etc.)
     path = request_line[1]  # ruta solicitada ("/index.html")
-    version = request_line[2]  # versión del protocolo HTTP (HTTP/1.1, HTTP/2, etc.)
-    headers = {}
-    body = ""
+    version = request_line[2]  # versión del protocolo HTTP (HTTP/1.1, HTTP/2,)
+    headers = {} # parte vacío
+    body = "" 
     is_body = False
 
     for line in lines[1:]:
@@ -50,11 +50,9 @@ def create_http_message(http_message_dict):
     return http_message
 
 
-# esta función se encarga de recibir el mensaje completo desde el cliente
+# esta función se encarga de recibir el mensaje completo desde el cliente.
 # en caso de que el mensaje sea más grande que el tamaño del buffer 'buff_size', esta función va esperar a que
 # llegue el resto. Para saber si el mensaje ya llegó por completo, se busca el caracter de fin de mensaje (parte de nuestro protocolo inventado)
-
-
 def receive_full_message(connection_socket, buff_size, end_sequence):
 
     # recibimos la primera parte del mensaje
@@ -97,3 +95,74 @@ def contains_end_of_message(message, end_sequence):
 def remove_end_of_message(full_message, end_sequence):
     index = full_message.rfind(end_sequence)
     return full_message[:index]
+
+# verifica si el host está en la lista de páginas bloqueadas
+def is_blocked(path, blocked_pages):
+    if blocked_pages[-1] == '/':
+        blocked_pages = blocked_pages[:-1]
+    if path[-1] == '/':
+        path = path[:-1]
+    for page in blocked_pages:
+        if path == page:
+            return True
+    return False
+
+# lee todo el mensaje HTTP desde el socket 
+def recv_http_message(socket, buff_size):
+    data = b""
+    # 1) leer hasta que lleguen los headers completos
+    while b"\r\n\r\n" not in data:
+        chunk = socket.recv(buff_size)
+        if not chunk:
+            break
+        data += chunk
+    # 2) headers completos, ahora sigo leyendo el resto (body)
+    while True:
+        chunk = socket.recv(buff_size)
+        if not chunk:
+            break
+        data += chunk
+
+    return data
+
+# verifica si una palabra está en la lista de palabras prohibidas
+def count_forbidden_words(forbidden_words, html):
+    counts = []
+    for w in forbidden_words:
+        palabra = list(w.keys())[0]   # la "word" es la clave del dict
+        counts.append(html.count(palabra))
+    return counts
+
+# reemplaza las palabras prohibidas en el HTML
+def reemplazar_forbidden_words(forbidden_words, html):
+    for w in forbidden_words:
+        palabra = list(w.keys())[0]       # la palabra prohibida (clave del dict)
+        reemplazo = w[palabra]            # el reemplazo (valor del dict)
+        # reemplazo simple (con espacios alrededor para evitar falsos positivos)
+        html = html.replace(palabra, reemplazo)
+    return html
+
+
+# Verifica si el HTML tiene palabras prohibidas y las reemplaza
+def procesar_html(body_html, forbidden_words):
+    # Ver cuántas veces aparecen
+    counts = count_forbidden_words(forbidden_words, body_html)
+    if sum(counts) == 0:
+        # No hay palabras prohibidas
+        print("No se encontraron palabras prohibidas")
+        return body_html
+    else:
+        print("Se encontraron palabras prohibidas: ", counts)
+        # Reemplazar todas 
+        new_body_html = reemplazar_forbidden_words(forbidden_words, body_html)
+        print(f"HTML modificado: {new_body_html}\n")
+        return new_body_html
+
+
+# Reemplaza el body del mensaje HTTP con un nuevo body
+def replace_body_http(http_message_parsed, new_body):
+    http_message_parsed['body'] = new_body # defino nuevo body
+    http_message_parsed['headers']['Content-Length'] = str(len(new_body)) # actualizo Content-Length
+    return http_message_parsed
+
+

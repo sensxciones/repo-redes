@@ -6,14 +6,14 @@ from utils import *
 
 # Nicole:
 # IP VM : 172.20.144.24
-# IP Host : 10.42.80.80
+# IP Host : 192.168.100.95
 
 # Natalia:
 # IP VM: 192.168.64.3
 # IP HOST: 192.168.64.1
 
-IP_HOST = "192.168.64.1"
-IP_VM = "192.168.64.3"
+IP_HOST = "192.168.100.95"
+IP_VM = "172.20.144.24"
 
 estructura = 0  # aca va la estructura de datos que se le pasará a create_http_message para crear el mensaje HTTP a enviar al cliente
 
@@ -22,21 +22,23 @@ config_path = sys.argv[1]
 with open(config_path, "r", encoding="utf-8") as file:
     data = json.load(file)
     NOMBRE = data["user"]
+    print("El usuario es: " + NOMBRE +".\n")
 
-response_html = """
-<!DOCTYPE html>
+# Cuerpo en HTML que se le enviará al cliente, se puede modificar para agregar el nombre del cliente
+response_html = """<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CC4303</title>
+    <title>RESPUESTA</title>
 </head>
 <body>
-    <h1>Bienvenide ... oh? no puedo ver tu nombre :c!</h1>
-    <h3><a href="replace">¿Qué es un proxy?</a></h3>
+    <h1>Hola hola!! yupiiii</h1>
+    <h3>El usuario es {NOMBRE}</h3>
 </body>
 </html>
-"""
+""".format(NOMBRE=NOMBRE)
 
+# Respuesta HTTP que se le enviará al cliente, se puede modificar para agregar el nombre del cliente
 response_message = {
     "method": "HTTP/1.1",
     "path": "200 OK",
@@ -61,6 +63,8 @@ if __name__ == "__main__":
     # armamos el socket que estara en el proxy esperando peticiones del cliente los parámetros que recibe
     # el socket indican el tipo de conexión (socket.SOCK_STREAM = socket orientado a conexión)
     proxy_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    print('Socket Server creado')
+
 
     # le indicamos al proxy socket que debe atender peticiones en la dirección address para ello usamos bind
     proxy_socket.bind(new_socket_address)
@@ -78,46 +82,23 @@ if __name__ == "__main__":
 
         # Recibimos el mensaje del cliente
         recv_message = receive_full_message(client_socket, buff_size, end_of_message)
-        print(f"-> Se ha recibido una request del cliente:\n{recv_message}\n")
+        print(f"-> Se ha recibido una request del cliente con el siguiente mensaje:\n{recv_message}\n")
 
-        # creo una respuesta para la maquina virtual
-        # response = create_http_message(response_message).encode()
-        # new_socket.send(response)
-        # print(f"Respuesta enviada: \n{response.decode()}\n")
+        # Visualizo el mensaje HTTP parseado
         http_message_parsed = parse_http_message(
-            recv_message
+        recv_message
         )  # print(f"Mensaje HTTP parseado\n")
         print(f"Mensaje HTTP parseado:\n{http_message_parsed}\n")
+ 
+        # reconstruyo el mensaje http desde la estructura de datos
+        http_message_parsed = create_http_message(http_message_parsed)
+        print(f"Mensaje HTTP reconstruido:\n{http_message_parsed}\n")
 
-        print(" ... Conectando al servidor ...")
-        # extraemos host y puerto del header
-        http_host = http_message_parsed["headers"][
-            "Host"
-        ]  # Extrae solo el host sin el puerto
-        ip_host = socket.gethostbyname(http_host)  # Obtengo la IP del host
-        protocol = (
-            http_message_parsed["version"].split("/")[0].lower()
-        )  # Extrae el protocolo (HTTP/1.1 -> HTTP)
-        http_path = http_message_parsed["path"]  # Extrae el path
+        # creo una respuesta para la maquina virtual
+        response = create_http_message(response_message).encode()
+        client_socket.send(response)
+        print(f"Respuesta enviada: \n{response.decode()}\n")
 
-        # creamos un nuevo socket para la conexion
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.connect((ip_host, 80))  # hay que modificar y definir host
-
-        # reenviamos la request al servidor
-        server_socket.send(recv_message.encode())
-        print(" ... Response enviada al servidor ...\n")
-
-        server_response = receive_full_message(server_socket, buff_size, end_of_message)
-        print(" ... Responde recibida por el servidor ...\n")
-
-        # reenviamos la response del cliente sin modificar
-        client_socket.send(server_response)
-
-        # cerramos la conexión de ambos sockets
-        # notar que la dirección que se impri
+        # Cierro conexión
         client_socket.close()
-        server_socket.close()
-        print("-> Conexión de ambos sockets ha sido cerrada")
-
-        # seguimos esperando por si llegan otras conexiones
+        print(f"Conexión con {new_socket_address} ha sido cerrada\n")
