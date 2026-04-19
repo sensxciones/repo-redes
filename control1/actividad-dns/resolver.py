@@ -1,7 +1,7 @@
 import socket
 
 from dnslib import DNSRecord
-from dnslib.dns import QTYPE
+from dnslib.dns import QTYPE, RR, A
 
 # Natalia:
 # IP VM: 192.168.64.1
@@ -76,8 +76,9 @@ def parser_dns_message(message_bytes):
 SERVER_ADDRESS = "192.33.4.12"
 SERVER_PORT = 53
 BUFFER_SIZE = 4096
-cache_dominios = {}
-ultimas_consultas = []
+
+cache_dominios = {}  # {dominio: ip}
+ultimas_consultas = []  # lista de dominios
 
 
 def send_dns_query(query, ip):
@@ -117,26 +118,81 @@ def resolver_ns_recursivo(ns, msg_consulta):
         return ns_ip
 
 
+def actualizar_cache(dominio, ip):
+    # agregamos el dominio a la lista de los ultimos 20
+    ultimas_consultas.append(dominio)
+    if len(ultimas_consultas) > 20:
+        # removemos el primer elemento
+        ultimas_consultas.pop(0)
+
+    # hay que contar la frecuencia de los dominios
+    contador = {}
+    for consulta in ultimas_consultas:
+        contador[consulta] = contador.get(consulta, 0) + 1
+
+    # guardamos las 3 con mas frecuencias
+    dominios_ordenados = sorted(contador.items(), key=lambda x: x[1], reverse=True)
+    # sacamos el top3 de los ordenados
+    top3_dominios = dominios_ordenados[:3]
+
+    # tenemos que definir el cache actualizado
+    nuevo_cache = {}
+    for dom, _ in top3_dominios:
+        if dom in cache_dominios:
+            nuevo_cache[dom] = cache_dominios[dom]
+        if dom == dominio:
+            nuevo_cache[dom] = ip
+
+    # limpiamos el anterior y lo actualizamos
+    cache_dominios.clear()
+    cache_dominios.update(nuevo_cache)
+    print(f"(debug) Cache actualizado: {cache_dominios}\n")
+
+
+def cache_response(msg, ip):
+    # la idea es construir una respuesta falsa con la IP que esta en cache
+    # hay que parsear el mensaje
+    query = DNSRecord.parse(msg)
+    query_parsed = parser_dns_message(msg)
+    qname = query_parsed["qname"]
+    response = query.reply()
+    # modifica el mensaje de pregunta
+    response.add_answer(RR(qname, QTYPE.A, rdata=A(ip)))
+
+    return response.pack()
+
+
 # recibe el mensaje de query en bytes obtenido desde el cliente. Dentro de esta función, siga el siguiente
 # procedimiento para obtener la respuesta:
 def resolver(mensaje_consulta, server=SERVER_ADDRESS):
     # Envíe el mensaje query al servidor raíz de DNS y espere su respuesta. Se recomienda dejar la IP del
     # servidor raíz en una variable global de su programa.
-    respuesta_bytes = send_dns_query(mensaje_consulta, server)
+    # Parseamos la respuesta a la estructura de diccionario
+    consulta_parsed = parser_dns_message(mensaje_consulta)
+    dominio_consultado = consulta_parsed["qname"]
 
+    # logica el CACHE
+    # ¿esta qname en el cache?
+    if dominio_consultado in cache_dominios:
+        # SI -> construir una respuesta "falsa" y enviar
+        ip_en_cache = cache_dominios[dominio_consultado]
+        print(f"(debug) CACHE: Dominio '{dominio_consultado}' encontrado en cache")
+        return cache_response(mensaje_consulta, ip_en_cache)
+    else:
+        # No -> se resuleve recursivamente,
+        print(f"(debug) CACHE: Dominio '{dominio_consultado} no está en cache'")
+        #       se obtiene IP reall
+        #       se registra en las ultimas_consultas,
+        #       se ve las top 3
+        #       y al final se envia la respuesta real
+
+    respuesta_bytes = send_dns_query(mensaje_consulta, server)
     if not respuesta_bytes:
         print("No se recibió respuesta")
         return None
 
-    # Parseamos la respuesta a la estructura de diccionario
-    respuesta_parsed = parser_dns_message(respuesta_bytes)
+    respuesta_parsed = parser_dns_message(response_bytes)
     dominio = respuesta_parsed["qname"]
-
-    # logica el CACHE
-    # ¿esta qname en el cache?
-    # SI -> construir una respuesta "falsa" y enviar
-    # No -> se resuleve recursivamente, se obtiene IP reall, se registra en las ultimas_consultas, se ve las top 3
-    # y al final se envia la respuesta real
 
     print(f"(debug) Consultando '{dominio}' a '.' con dirección IP '{server}'\n")
     # Si el mensaje answer recibido tiene la respuesta a la consulta, es decir, viene alguna respuesta
@@ -149,6 +205,7 @@ def resolver(mensaje_consulta, server=SERVER_ADDRESS):
     ):
         ip = get_rdata(respuesta_parsed)
         print(f"(debug) Enviando respuesta a IP '{ip}'\n")
+        actualizar_cache(dominio, ip)
         return respuesta_bytes
 
     # Si la respuesta recibida corresponde a una delegación a otro Name Server, es decir, vienen
