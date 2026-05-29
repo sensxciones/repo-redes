@@ -191,7 +191,7 @@ def resolver(mensaje_consulta, server=SERVER_ADDRESS):
         print("No se recibió respuesta")
         return None
 
-    respuesta_parsed = parser_dns_message(response_bytes)
+    respuesta_parsed = parser_dns_message(respuesta_bytes)
     dominio = respuesta_parsed["qname"]
 
     print(f"(debug) Consultando '{dominio}' a '.' con dirección IP '{server}'\n")
@@ -270,7 +270,6 @@ if __name__ == "__main__":
             print(f"Respuesta enviada: {client_addres}\n")
         else:
             print(f"No es posible resolver la consulta de {client_addres}")
-        break
 
-    print(" ... Cerrando socket DNS ... ")
-    socket_resolver.close()
+    # print(" ... Cerrando socket DNS ... ")
+    # socket_resolver.close()
