@@ -14,7 +14,15 @@ class CongestionControl:
     '''
 
     def __init__(self, initial_window_size=1):
-        '''Constructor de la clase CongestionControl.'''
+        '''Constructor de la clase CongestionControl.
+        Parámetros:
+        - initial_window_size: int, tamaño inicial de la ventana de congestión en MSS. Por defecto es 1 MSS.
+        - current_state: str, estado actual dentro de control de congestión. Puede ser "slow_start" o "congestion_avoidance". Se inicializa en "slow_start".
+        - MSS: int, tamaño máximo en bytes del área de datos de un segmento congestion. Se inicializa con el valor de initial_window_size.
+        - cwnd: int, tamaño actual de la ventana de congestión en bytes. Se inicializa con 1 MSS, y siempre es un múltiplo de MSS.
+        - ssthresh: int, Slow start threshold. Se define luego del primer timeout durante slow start, antes de ser definida debe ser igual a None.        
+        '''
+
         self.window_size = initial_window_size
         self.current_state = "slow_start" # estado actual dentro de control de congestion: slow_start o congestion_avoidance
         self.MSS = initial_window_size # indica tamaño maximo en bytes del area de datos de un segmento congestion
@@ -85,7 +93,7 @@ class CongestionControl:
 
         # volver a slow start
         self.current_state = "slow_start"
-        
+
         
     def is_state_slow_start(self):
         '''Retorna True si el estado actual es slow_start, y False en caso contrario'''
