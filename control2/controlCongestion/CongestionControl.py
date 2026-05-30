@@ -23,7 +23,6 @@ class CongestionControl:
         - ssthresh: int, Slow start threshold. Se define luego del primer timeout durante slow start, antes de ser definida debe ser igual a None.        
         '''
 
-        self.window_size = initial_window_size
         self.current_state = "slow_start" # estado actual dentro de control de congestion: slow_start o congestion_avoidance
         self.MSS = initial_window_size # indica tamaño maximo en bytes del area de datos de un segmento congestion
         self.cwnd = self.MSS # tamaño actual de la ventana de congestión en bytes. Se inicializa con 1 MSS, y siempre es un múltiplo de MSS
@@ -106,3 +105,8 @@ class CongestionControl:
     def get_ssthresh(self):
         '''Retorna el valor de ssthresh, que representa el umbral de congestión.'''
         return self.ssthresh
+    
+    def get_MSS(self):
+        '''Retorna el valor de MSS, que representa el tamaño máximo en bytes del área de datos de un segmento congestion.'''
+        return self.MSS
+    

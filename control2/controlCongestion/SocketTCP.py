@@ -1,4 +1,5 @@
 import socket
+from CongestionControl import CongestionControl
 from socketUDP import SocketUDP
 from slidingWindowCC import *
 from random import randint
@@ -30,6 +31,7 @@ class SocketTCP:
         # guardamos el buffer y los bytes pendientes
         self.buffer_interno = b""
         self.bytes_pendientes = 0
+        self.congestion_controler = CongestionControl(8)
 
     def set_direccion_origen(self, origen):
         self.direccion_origen = origen
@@ -381,20 +383,21 @@ class SocketTCP:
         '''Esta función será la encargada de manejar Go-Back-N desde el lado del emisor.'''
 
         message_length = str(len(message)).encode()
-        # dividimos el mensaje en trozos de 16 bytes
-        data_list = self.divide_message(message, 4)
-        window_size = 4
+        # dividimos el mensaje en trozos 
+        data_list = self.divide_message(message, self.congestion_controler.get_MSS())
+        window_size = self.congestion_controler.get_cwnd() // self.congestion_controler.get_MSS()
+        print("\nEnviando mensaje de largo: ", len(message))
 
-        # usamos una ventana para que vean como se usa
+        # Inicializando ventana
         initial_seq = self.num_seq
         ventana = SlidingWindowCC(window_size, [message_length]+data_list, initial_seq)
-        print("\nEnviando mensaje de largo: ", len(message))
         print("Ventana inicial:")
         print(ventana, "\n")
 
         # Inicio timer
         self.socket_udp.settimeout(5)
         self.socket_udp.set_timer_list_length(1)
+
         # enviar ventana inicial
         print("Enviando ventana inicial:")
         for i in range(window_size):
@@ -425,11 +428,19 @@ class SocketTCP:
                 
                 if self.is_ack_msg(parsed_ack):
                     
+                    ack_seq = parsed_ack["SEQ"]
+
+                    # CONTROL DE CONGESTION: se informa al controlador que se recibió un ACK
+                    self.congestion_controler.event_ack_received()
+                    window_size = self.congestion_controler.get_MSS_in_cwnd()
+                    ventana.update_window_size(window_size)
+
+
                     if self.socket_udp.timer_list[0] is not None:
                         self.socket_udp.stop_timer(timer_index=0) 
 
                     # Mover ventana
-                    ack_seq = parsed_ack["SEQ"]
+                    #ack_seq = parsed_ack["SEQ"]
                     print(f"ACK con SEQ = {ack_seq} recibido, moviendo ventana ...")
 
                     while ventana.get_data(0) is not None and ventana.get_sequence_number(0) < ack_seq:
@@ -450,6 +461,12 @@ class SocketTCP:
                 
 
             except TimeoutError:
+                
+                #CONTROL DE CONGESTIÓN: se informa al controlador que hubo un timeout
+                self.congestion_controler.event_timeout() 
+                window_size = self.congestion_controler.get_MSS_in_cwnd()
+                ventana.update_window_size(window_size)
+
                 # reenviar toda la ventana
                 for i in range(window_size):
                     data = ventana.get_data(i)
