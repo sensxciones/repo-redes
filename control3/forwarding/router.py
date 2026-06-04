@@ -26,7 +26,7 @@ def parse_packet(IP_packet: bytes):
     parsed_ip_packet["ip"]["d"] = int(ip_num[3])
 
     # extraemos el valor del puerto -> decodificar
-    parsed_ip_packet["Puerto"] = int(puerto_raw.decode())
+    parsed_ip_packet["puerto"] = int(puerto_raw.decode())
 
     # extraemos el mensaje que se envia
     parsed_ip_packet["mensaje"] = msg_raw.decode("utf-8")
@@ -42,7 +42,7 @@ def create_packet(parsed_IP_packet):
     b = parsed_IP_packet["ip"]["b"]
     c = parsed_IP_packet["ip"]["c"]
     d = parsed_IP_packet["ip"]["d"]
-    puerto = str(parsed_IP_packet["Puerto"])
+    puerto = str(parsed_IP_packet["puerto"])
     mensaje = str(parsed_IP_packet["mensaje"])
     # armamos la ip y la codificamos
     ip = f"{a}.{b}.{c}.{d}"
@@ -52,11 +52,48 @@ def create_packet(parsed_IP_packet):
     return ip_packet.encode()
 
 
+# =============== EXTRAS ===============
+def get_ip_from_parsed(parsed_IP_packet):
+    ip_raw = parsed_IP_packet["ip"]
+    a, b, c, d = ip_raw["a"], ip_raw["b"], ip_raw["c"], ip_raw["d"]
+    ip = f"{a}.{b}.{c}.{d}"
+    return ip
+
+
+# =======================================
+
+# ==== Paso 6 ====
+
+
+# Revisa en orden la tabla de rutas para indicar la dirección del siguiente salto
+# Recibe como parámetros el nombre del archivo que contiene las rutas routes_file_name y
+# la dirección de destino destination_address
+# debe retornar el par (next_hop_IP, next_hop_puerto) que indica por dónde se debe enviar
+# un paquete que se dirige a la dirección de destino destination_address
+# Si al recorrer la tabla de rutas no encuentra una ruta apropiada, la función deberá retornar None
+def check_routes(
+    routes_file_name: str, destination_address: tuple[str, int]
+) -> tuple[str, int] | None:
+    # primero abrimos routes_file_name
+    with open(routes_file_name, "r") as file:
+        # revisamos cada linea del archivo
+        for line in file:
+            # si encontramos destination_address, debemos retornar el par ordenado
+            if destination_address[0] in line and str(destination_address[1]) in line:
+                # [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar]
+                route = line.split(" ")
+                # separamos los elementos de la linea en una lista
+                return (route[3], int(route[4]))
+    return None
+
+
+# ================
+
 if __name__ == "__main__":
     # chequeo si efectivamente tengo las tres cosas
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 4:
         raise Exception(
-            "El formato de uso corresponde: python3 router.py router_IP router_puerto router_rutas.txt"
+            "Formato: python3 router.py [router_IP] [router_puerto] [router_rutas.txt]"
         )
     # extraemos los elementos
     router_IP = sys.argv[1]
@@ -67,9 +104,21 @@ if __name__ == "__main__":
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.bind((router_IP, router_puerto))
 
-    # ==== TEST ====
+    # ====================================== TEST ======================================
     # IP_packet_v1 = "127.0.0.1;8881;hola".encode()
     # esto lo deben crear de forma manual de acuerdo a la estructura que hayan definido
     # parsed_IP_packet = parse_packet(IP_packet_v1)
     # IP_packet_v2 = create_packet(parsed_IP_packet)
     # print("IP_packet_v1 == IP_packet_v2 ? {}".format(IP_packet_v1 == IP_packet_v2))
+    # ====================================================================================
+    while True:
+        print("... socket esperando mensaje ...")
+        raw_packet, _ = s.recvfrom(1024)  # esperamos que llegue el mensaje
+        parsed_packet = parse_packet(raw_packet)  # parseamos
+        print(parsed_packet)
+        ip = get_ip_from_parsed(parsed_packet)
+        puerto = parsed_packet["puerto"]
+        print(ip)
+        print(puerto)
+        break
+        # if check_routes(tabla_rutas, (ip, puerto))
