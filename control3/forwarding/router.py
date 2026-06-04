@@ -78,15 +78,12 @@ def check_routes(
     with open(routes_file_name, "r") as file:
         # revisamos cada linea del archivo
         for line in file:
-            # si encontramos destination_address, debemos retornar el par ordenado
-            if destination_address[0] in line and str(destination_address[1]) in line:
-                # [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar]
-                route = line.split(
-                    " "
-                )  # separamos los elementos de la linea en una lista
-                puerto_inicial, puerto_final = route[1], route[2]
-                if puerto_inicial <= destination_address[0] <= puerto_final:
-                    return (route[3], int(route[4]))
+            # line = [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar]
+            route = line.split(" ")
+            puerto_inicial, puerto_final = int(route[1]), int(route[2])
+            # si el puerto que buscamos esta en el rango de la tabla de rutas, retornamos el siguiente paso
+            if destination_address[1] in range(puerto_inicial, puerto_final + 1):
+                return (route[3], int(route[4]))
     return None
 
 
@@ -131,6 +128,7 @@ if __name__ == "__main__":
             print(
                 f"No hay rutas hacia '{destination_address}' para paquete [paquete_ip]"
             )
+            print(check_routes(tabla_rutas, (destination_address, puerto)))
         else:
             # si no: llame a la función check_routes y use la dirección que esta retorna para hacer forward del paquete
             pair = check_routes(tabla_rutas, (destination_address, puerto))
