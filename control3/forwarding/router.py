@@ -81,9 +81,12 @@ def check_routes(
             # si encontramos destination_address, debemos retornar el par ordenado
             if destination_address[0] in line and str(destination_address[1]) in line:
                 # [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar]
-                route = line.split(" ")
-                # separamos los elementos de la linea en una lista
-                return (route[3], int(route[4]))
+                route = line.split(
+                    " "
+                )  # separamos los elementos de la linea en una lista
+                puerto_inicial, puerto_final = route[1], route[2]
+                if puerto_inicial <= destination_address[0] <= puerto_final:
+                    return (route[3], int(route[4]))
     return None
 
 
@@ -112,13 +115,26 @@ if __name__ == "__main__":
     # print("IP_packet_v1 == IP_packet_v2 ? {}".format(IP_packet_v1 == IP_packet_v2))
     # ====================================================================================
     while True:
-        print("... socket esperando mensaje ...")
-        raw_packet, _ = s.recvfrom(1024)  # esperamos que llegue el mensaje
-        parsed_packet = parse_packet(raw_packet)  # parseamos
-        print(parsed_packet)
-        ip = get_ip_from_parsed(parsed_packet)
+        name_socket = f"socket {tabla_rutas[6:8]}"
+        print(f"... {name_socket} esperando mensaje ...")
+        paquete_ip, _ = s.recvfrom(1024)  # esperamos que llegue el mensaje
+        parsed_packet = parse_packet(paquete_ip)  # parseamos
+        destination_address = get_ip_from_parsed(parsed_packet)
         puerto = parsed_packet["puerto"]
-        print(ip)
-        print(puerto)
-        break
-        # if check_routes(tabla_rutas, (ip, puerto))
+        # si el mensaje es para el router, imprimir mensaje
+        if router_puerto == puerto:
+            print("El mensaje es para este router!")
+            break
+
+        # revisamos si el socket tiene la ruta en el archivo
+        if check_routes(tabla_rutas, (destination_address, puerto)) is None:
+            print(
+                f"No hay rutas hacia '{destination_address}' para paquete [paquete_ip]"
+            )
+        else:
+            # si no: llame a la función check_routes y use la dirección que esta retorna para hacer forward del paquete
+            pair = check_routes(tabla_rutas, (destination_address, puerto))
+            print(
+                f"redirigiendo paquete {paquete_ip} con destino final {destination_address} desde {router_IP} hacia {pair}"
+            )
+            s.sendto(paquete_ip, pair)
