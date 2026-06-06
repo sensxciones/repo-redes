@@ -1,6 +1,12 @@
 import socket
 import sys
 
+# === variables globales
+MAX_SIZE = 1024
+NUM_RUTAS = 0
+
+# ===
+
 # la idea es crear un diccionario que tenga la siguiente estructura:
 # ["IP"] -> ["a"], ["b"], ["c"], ["d"] que represente a la direccion IP a.b.c.d
 # ["Puerto"] -> que represente el pruerto (int -> bytes)
@@ -62,18 +68,17 @@ def get_ip_from_parsed(parsed_IP_packet):
 
 # =======================================
 
-# ==== Paso 6 ====
 
-
+# ==================================== Paso 6 ====================================
 # Revisa en orden la tabla de rutas para indicar la dirección del siguiente salto
 # Recibe como parámetros el nombre del archivo que contiene las rutas routes_file_name y
 # la dirección de destino destination_address
 # debe retornar el par (next_hop_IP, next_hop_puerto) que indica por dónde se debe enviar
 # un paquete que se dirige a la dirección de destino destination_address
 # Si al recorrer la tabla de rutas no encuentra una ruta apropiada, la función deberá retornar None
-def check_routes(
-    routes_file_name: str, destination_address: tuple[str, int]
-) -> tuple[str, int] | None:
+def check_routes(routes_file_name: str, destination_address: tuple[str, int]):
+    # creamos una lista para almacenar las posibles rutas
+    rutas = []
     # primero abrimos routes_file_name
     with open(routes_file_name, "r") as file:
         # revisamos cada linea del archivo
@@ -81,13 +86,16 @@ def check_routes(
             # line = [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar]
             route = line.split(" ")
             puerto_inicial, puerto_final = int(route[1]), int(route[2])
-            # si el puerto que buscamos esta en el rango de la tabla de rutas, retornamos el siguiente paso
+            # si el puerto que buscamos esta en el rango de puertos, agregamos el par (ip, puerto) a rutas
             if destination_address[1] in range(puerto_inicial, puerto_final + 1):
-                return (route[3], int(route[4]))
-    return None
+                rutas.append((route[3], int(route[4])))
+    if len(rutas) == 0:
+        return None
+    else:
+        return rutas
 
 
-# ================
+# ================================================================================
 
 if __name__ == "__main__":
     # chequeo si efectivamente tengo las tres cosas
@@ -104,35 +112,37 @@ if __name__ == "__main__":
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.bind((router_IP, router_puerto))
 
-    # ====================================== TEST ======================================
-    # IP_packet_v1 = "127.0.0.1;8881;hola".encode()
-    # esto lo deben crear de forma manual de acuerdo a la estructura que hayan definido
-    # parsed_IP_packet = parse_packet(IP_packet_v1)
-    # IP_packet_v2 = create_packet(parsed_IP_packet)
-    # print("IP_packet_v1 == IP_packet_v2 ? {}".format(IP_packet_v1 == IP_packet_v2))
-    # ====================================================================================
     while True:
-        name_socket = f"socket {tabla_rutas[6:8]}"
+        name_socket = f"Router {tabla_rutas[6:8]}"
         print(f"... {name_socket} esperando mensaje ...")
-        paquete_ip, _ = s.recvfrom(1024)  # esperamos que llegue el mensaje
-        parsed_packet = parse_packet(paquete_ip)  # parseamos
+        paquete_ip, _ = s.recvfrom(MAX_SIZE)  # esperamos que llegue el mensaje
+        parsed_packet = parse_packet(paquete_ip)  # parseamos el mensaje recibido
+        # obtenemos la direccion ip y el puerto del mensaje recibido
         destination_address = get_ip_from_parsed(parsed_packet)
         puerto = parsed_packet["puerto"]
-        # si el mensaje es para el router, imprimir mensaje
-        if router_puerto == puerto:
-            print("El mensaje es para este router!")
-            break
 
-        # revisamos si el socket tiene la ruta en el archivo
-        if check_routes(tabla_rutas, (destination_address, puerto)) is None:
+        # si el mensaje recibido es para el router actual, imprimir mensaje
+        if router_puerto == puerto:
+            mensaje = parsed_packet["mensaje"]
+            print("El mensaje es para este router!")
+            print(f"Mensaje recibido: {mensaje}")
+            continue
+
+        # si no es para el socket acutal, revisamos si el socket tiene la ruta en el archivo
+        rutas = check_routes(tabla_rutas, (destination_address, puerto))
+        if rutas is None:
             print(
                 f"No hay rutas hacia '{destination_address}' para paquete [paquete_ip]"
             )
-            print(check_routes(tabla_rutas, (destination_address, puerto)))
         else:
-            # si no: llame a la función check_routes y use la dirección que esta retorna para hacer forward del paquete
-            pair = check_routes(tabla_rutas, (destination_address, puerto))
-            print(
-                f"redirigiendo paquete {paquete_ip} con destino final {destination_address} desde {router_IP} hacia {pair}"
-            )
-            s.sendto(paquete_ip, pair)
+            # ahora revisamos la cantidad de camino que tiene rutas
+            if len(rutas) == 1:
+                # solo una ruta definida -> un solo par (ip, puerto) en rutas[0]
+                print(
+                    f"redirigiendo paquete {paquete_ip.decode()} con destino final {(destination_address, puerto)} desde {(router_IP, router_puerto)} hacia {rutas[0]}"
+                )
+                s.sendto(paquete_ip, rutas[0])
+            else:
+                # en el caso de existir mas de una ruta -> round-robin
+                print("CASO: ROUND-ROBIN")
+                s.sendto(paquete_ip, rutas[0])
