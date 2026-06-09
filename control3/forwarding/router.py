@@ -3,36 +3,31 @@ import sys
 
 # === variables globales
 MAX_SIZE = 1024
-NUM_RUTAS = 0
-
-# ===
 
 # la idea es crear un diccionario que tenga la siguiente estructura:
 # ["IP"] -> ["a"], ["b"], ["c"], ["d"] que represente a la direccion IP a.b.c.d
 # ["Puerto"] -> que represente el pruerto (int -> bytes)
 # ["mensaje"]
-# Para esta actividad usaremos la siguiente estructura para nuestros paquetes IP:
-# [Dirección IP];[Puerto];[mensaje]
+# Para esta actividad usaremos la siguiente estructura para nuestros paquetes IP: [Dirección IP][Puerto][mensaje]
 
 
 # Permite extraer los headers y datos del paquete recibido,
 # y lo pase a una estructura de datos conveniente
 def parse_packet(IP_packet: bytes):
-    # creamos el diccionario
-    parsed_ip_packet = {"ip": {}, "Puerto": ""}
-    # hay que dividir según ";" para obtener [Dirección IP];[Puerto];[mensaje]
-    raw_data = IP_packet.split(b";")
-    ip_raw, puerto_raw, msg_raw = raw_data[0], raw_data[1], raw_data[2]
-    # dividimos la ip segun .
-    ip_num = ip_raw.split(b".")
-    # extraemos los valores de la direccion ip a.b.c.d -> primeros 4 elementos
-    parsed_ip_packet["ip"]["a"] = int(ip_num[0])
-    parsed_ip_packet["ip"]["b"] = int(ip_num[1])
-    parsed_ip_packet["ip"]["c"] = int(ip_num[2])
-    parsed_ip_packet["ip"]["d"] = int(ip_num[3])
+    # creamos el diccionario base
+    parsed_ip_packet = {"ip": {}, "puerto": "", "mensaje": ""}
+    # hay que dividir para obtener [Dirección IP],[Puerto] y [mensaje]
+    ip_raw = IP_packet[0:4]
+    puerto_raw = IP_packet[4:6]
+    msg_raw = IP_packet[6:]
+    # extraemos los valores de la direccion ip a.b.c.d -> primeros 4 bytes
+    parsed_ip_packet["ip"]["a"] = ip_raw[0]
+    parsed_ip_packet["ip"]["b"] = ip_raw[1]
+    parsed_ip_packet["ip"]["c"] = ip_raw[2]
+    parsed_ip_packet["ip"]["d"] = ip_raw[3]
 
-    # extraemos el valor del puerto -> decodificar
-    parsed_ip_packet["puerto"] = int(puerto_raw.decode())
+    # extraemos el valor del puerto -> obtenemos de los 2 bytes extraidos
+    parsed_ip_packet["puerto"] = int.from_bytes(puerto_raw, "big")
 
     # extraemos el mensaje que se envia
     parsed_ip_packet["mensaje"] = msg_raw.decode("utf-8")
@@ -44,18 +39,15 @@ def parse_packet(IP_packet: bytes):
 # a la estructura que usted definió
 def create_packet(parsed_IP_packet):
     # extremos toda la informacion de la estructura
-    a = parsed_IP_packet["ip"]["a"]
-    b = parsed_IP_packet["ip"]["b"]
-    c = parsed_IP_packet["ip"]["c"]
-    d = parsed_IP_packet["ip"]["d"]
-    puerto = str(parsed_IP_packet["puerto"])
-    mensaje = str(parsed_IP_packet["mensaje"])
-    # armamos la ip y la codificamos
-    ip = f"{a}.{b}.{c}.{d}"
-    # la idea es que el paquete quede de la forma: [Dirección IP];[Puerto];[mensaje]
-    ip_packet = f"{ip};{puerto};{mensaje}"
-    # retornamos el mensaje codificado en bytes
-    return ip_packet.encode()
+    a = parsed_IP_packet["ip"]["a"].to_bytes(1, "big")
+    b = parsed_IP_packet["ip"]["b"].to_bytes(1, "big")
+    c = parsed_IP_packet["ip"]["c"].to_bytes(1, "big")
+    d = parsed_IP_packet["ip"]["d"].to_bytes(1, "big")
+    puerto = parsed_IP_packet["puerto"].to_bytes(2, "big")
+    mensaje = parsed_IP_packet["mensaje"].encode()
+    # armamos la ip concatenando los numeros a, b, c y d
+    # la idea es que el paquete quede de la forma: [Dirección IP][Puerto][mensaje]
+    return a + b + c + d + puerto + mensaje
 
 
 # =============== EXTRAS ===============
@@ -66,7 +58,26 @@ def get_ip_from_parsed(parsed_IP_packet):
     return ip
 
 
-# =======================================
+# la funcion lee el archivo tabla de rutas, y constuye el diccionario que usaremos para ver las rutas
+# la idea es que sea de la forma {(puerto_inicial, puerto_final): [ruta1, ruta2]}
+def load_routes(routes_file_name):
+    routes = {}
+    with open(routes_file_name, "r") as file:
+        # revisamos cada linea del archivo
+        for line in file:
+            # line = [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar]
+            route = line.split(" ")
+            puerto_inicial, puerto_final = route[1], route[2]
+            new_route = route[3], route[4]
+            if (puerto_inicial, puerto_final) in routes.keys():
+                # si ya esta el rango, agregamos la nueva ruta: ([IP_Para_llegar], [Puerto_para_llegar])
+                routes[(puerto_inicial, puerto_final)].append(new_route)
+            else:
+                routes[(puerto_inicial, puerto_final)] = [new_route]
+    return routes
+
+
+# ==============================================================================
 
 
 # ==================================== Paso 6 ====================================
@@ -76,10 +87,9 @@ def get_ip_from_parsed(parsed_IP_packet):
 # debe retornar el par (next_hop_IP, next_hop_puerto) que indica por dónde se debe enviar
 # un paquete que se dirige a la dirección de destino destination_address
 # Si al recorrer la tabla de rutas no encuentra una ruta apropiada, la función deberá retornar None
-def check_routes(routes_file_name: str, destination_address: tuple[str, int]):
-    # creamos una lista para almacenar las posibles rutas
-    rutas = []
-    # primero abrimos routes_file_name
+def check_routes(
+    routes_file_name: str, destination_address: tuple[str, int], possible_routes
+):
     with open(routes_file_name, "r") as file:
         # revisamos cada linea del archivo
         for line in file:
@@ -88,11 +98,19 @@ def check_routes(routes_file_name: str, destination_address: tuple[str, int]):
             puerto_inicial, puerto_final = int(route[1]), int(route[2])
             # si el puerto que buscamos esta en el rango de puertos, agregamos el par (ip, puerto) a rutas
             if destination_address[1] in range(puerto_inicial, puerto_final + 1):
-                rutas.append((route[3], int(route[4])))
-    if len(rutas) == 0:
+                # ahora vemos si (puerto_inicial, puerto_final) esta en el diccionario
+                if (puerto_inicial, puerto_final) in possible_routes.keys():
+                    # agregamos la nueva ruta
+                    new_route = (route[3], int(route[4]))
+                    possible_routes[(puerto_inicial, puerto_final)].append(new_route)
+                else:
+                    new_route = (route[3], int(route[4]))
+                    possible_routes[(puerto_inicial, puerto_final)] = []
+                    possible_routes[(puerto_inicial, puerto_final)].append(new_route)
+    if len(possible_routes) == 0:
         return None
     else:
-        return rutas
+        return possible_routes
 
 
 # ================================================================================
@@ -111,6 +129,7 @@ if __name__ == "__main__":
     # creamos socket bloqueante en el par (router_IP, router_puerto)
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.bind((router_IP, router_puerto))
+    possible_routes = {}
 
     while True:
         name_socket = f"Router {tabla_rutas[6:8]}"
@@ -118,31 +137,29 @@ if __name__ == "__main__":
         paquete_ip, _ = s.recvfrom(MAX_SIZE)  # esperamos que llegue el mensaje
         parsed_packet = parse_packet(paquete_ip)  # parseamos el mensaje recibido
         # obtenemos la direccion ip y el puerto del mensaje recibido
-        destination_address = get_ip_from_parsed(parsed_packet)
+        destination_address = (
+            get_ip_from_parsed(parsed_packet),
+            parsed_packet["puerto"],
+        )
         puerto = parsed_packet["puerto"]
 
         # si el mensaje recibido es para el router actual, imprimir mensaje
         if router_puerto == puerto:
             mensaje = parsed_packet["mensaje"]
             print("El mensaje es para este router!")
-            print(f"Mensaje recibido: {mensaje}")
-            continue
+            print(f"Mensaje recibido: {mensaje}\n")
+            break
 
         # si no es para el socket acutal, revisamos si el socket tiene la ruta en el archivo
-        rutas = check_routes(tabla_rutas, (destination_address, puerto))
+        rutas = check_routes(tabla_rutas, destination_address, possible_routes)
         if rutas is None:
             print(
-                f"No hay rutas hacia '{destination_address}' para paquete [paquete_ip]"
+                f"No hay rutas hacia '{destination_address}' para paquete {paquete_ip}"
             )
+            break
         else:
-            # ahora revisamos la cantidad de camino que tiene rutas
-            if len(rutas) == 1:
-                # solo una ruta definida -> un solo par (ip, puerto) en rutas[0]
-                print(
-                    f"redirigiendo paquete {paquete_ip.decode()} con destino final {(destination_address, puerto)} desde {(router_IP, router_puerto)} hacia {rutas[0]}"
-                )
-                s.sendto(paquete_ip, rutas[0])
-            else:
-                # en el caso de existir mas de una ruta -> round-robin
-                print("CASO: ROUND-ROBIN")
-                s.sendto(paquete_ip, rutas[0])
+            print(
+                f"redirigiendo paquete {paquete_ip.decode()} con destino final {destination_address} desde {(router_IP, router_puerto)} hacia {rutas[0]}\n"
+            )
+            s.sendto(paquete_ip, rutas[0])
+            break
