@@ -54,42 +54,20 @@ def create_packet(parsed_IP_packet):
 def get_ip_from_parsed(parsed_IP_packet):
     ip_raw = parsed_IP_packet["ip"]
     a, b, c, d = ip_raw["a"], ip_raw["b"], ip_raw["c"], ip_raw["d"]
-    ip = f"{a}.{b}.{c}.{d}"
-    return ip
-
-
-# la funcion lee el archivo tabla de rutas, y constuye el diccionario que usaremos para ver las rutas
-# la idea es que sea de la forma {(puerto_inicial, puerto_final): [ruta1, ruta2]}
-def load_routes(routes_file_name):
-    routes = {}
-    with open(routes_file_name, "r") as file:
-        # revisamos cada linea del archivo
-        for line in file:
-            # line = [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar]
-            route = line.split(" ")
-            puerto_inicial, puerto_final = route[1], route[2]
-            new_route = route[3], route[4]
-            if (puerto_inicial, puerto_final) in routes.keys():
-                # si ya esta el rango, agregamos la nueva ruta: ([IP_Para_llegar], [Puerto_para_llegar])
-                routes[(puerto_inicial, puerto_final)].append(new_route)
-            else:
-                routes[(puerto_inicial, puerto_final)] = [new_route]
-    return routes
+    return f"{a}.{b}.{c}.{d}"
 
 
 # ==============================================================================
 
 
-# ==================================== Paso 6 ====================================
 # Revisa en orden la tabla de rutas para indicar la dirección del siguiente salto
 # Recibe como parámetros el nombre del archivo que contiene las rutas routes_file_name y
 # la dirección de destino destination_address
 # debe retornar el par (next_hop_IP, next_hop_puerto) que indica por dónde se debe enviar
 # un paquete que se dirige a la dirección de destino destination_address
 # Si al recorrer la tabla de rutas no encuentra una ruta apropiada, la función deberá retornar None
-def check_routes(
-    routes_file_name: str, destination_address: tuple[str, int], possible_routes
-):
+def check_routes(routes_file_name: str, destination_address: tuple[str, int]):
+    routes = []
     with open(routes_file_name, "r") as file:
         # revisamos cada linea del archivo
         for line in file:
@@ -99,18 +77,22 @@ def check_routes(
             # si el puerto que buscamos esta en el rango de puertos, agregamos el par (ip, puerto) a rutas
             if destination_address[1] in range(puerto_inicial, puerto_final + 1):
                 # ahora vemos si (puerto_inicial, puerto_final) esta en el diccionario
-                if (puerto_inicial, puerto_final) in possible_routes.keys():
-                    # agregamos la nueva ruta
-                    new_route = (route[3], int(route[4]))
-                    possible_routes[(puerto_inicial, puerto_final)].append(new_route)
-                else:
-                    new_route = (route[3], int(route[4]))
-                    possible_routes[(puerto_inicial, puerto_final)] = []
-                    possible_routes[(puerto_inicial, puerto_final)].append(new_route)
-    if len(possible_routes) == 0:
+                next_step = (route[3], int(route[4]))
+                routes.append(next_step)
+    if len(routes) == 0:
         return None
     else:
-        return possible_routes
+        return routes
+
+
+def get_puertos_inicial_final(routes_file_name, destination_address):
+    with open(routes_file_name, "r") as file:
+        for line in file:
+            route = line.split(" ")
+            puerto_inicial, puerto_final = int(route[1]), int(route[2])
+            if destination_address[1] in range(puerto_inicial, puerto_final + 1):
+                return (puerto_inicial, puerto_final)
+    return None
 
 
 # ================================================================================
@@ -129,8 +111,7 @@ if __name__ == "__main__":
     # creamos socket bloqueante en el par (router_IP, router_puerto)
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.bind((router_IP, router_puerto))
-    possible_routes = {}
-
+    state_routes = {}
     while True:
         name_socket = f"Router {tabla_rutas[6:8]}"
         print(f"... {name_socket} esperando mensaje ...")
@@ -151,15 +132,20 @@ if __name__ == "__main__":
             break
 
         # si no es para el socket acutal, revisamos si el socket tiene la ruta en el archivo
-        rutas = check_routes(tabla_rutas, destination_address, possible_routes)
+        rutas = check_routes(tabla_rutas, destination_address)
         if rutas is None:
             print(
                 f"No hay rutas hacia '{destination_address}' para paquete {paquete_ip}"
             )
-            break
         else:
+            puertos = get_puertos_inicial_final(tabla_rutas, destination_address)
+            if puertos not in state_routes.keys():
+                state_routes[puertos] = 0
+            else:
+                state_routes[puertos] = (state_routes[puertos] + 1) % len(rutas)
+            next_route = state_routes[puertos]
+            print(f"VAMOS POR LA RUTA {next_route + 1}")
             print(
-                f"redirigiendo paquete {paquete_ip.decode()} con destino final {destination_address} desde {(router_IP, router_puerto)} hacia {rutas[0]}\n"
+                f"redirigiendo paquete {paquete_ip} con destino final {destination_address} desde {(router_IP, router_puerto)} hacia {rutas[next_route]}\n"
             )
-            s.sendto(paquete_ip, rutas[0])
-            break
+            s.sendto(paquete_ip, rutas[next_route])
