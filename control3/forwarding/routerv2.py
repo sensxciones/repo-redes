@@ -4,11 +4,10 @@ import sys
 # === variables globales
 MAX_SIZE = 1024
 
-# la idea es crear un diccionario que tenga la siguiente estructura:
-# ["IP"] -> ["a"], ["b"], ["c"], ["d"] que represente a la direccion IP a.b.c.d
-# ["Puerto"] -> que represente el pruerto (int -> bytes)
-# ["mensaje"]
-# Para esta actividad usaremos la siguiente estructura para nuestros paquetes IP: [Dirección IP][Puerto][mensaje]
+# Nuestro TTL corresponderá a un número entero entre 1 y 255. Se sugiere añadir el TTL como un elemento de 1 byte al final
+# de su header original.
+# Con esto su header utilizaría 7 bytes donde: los primeros 4 bytes representan la IP, los siguientes 2 bytes representan
+# el puerto, el siguiente byte representa el TTL y los bytes restantes representan el mensaje.
 
 
 # Permite extraer los headers y datos del paquete recibido,
@@ -19,7 +18,8 @@ def parse_packet(IP_packet: bytes):
     # hay que dividir para obtener [Dirección IP],[Puerto] y [mensaje]
     ip_raw = IP_packet[0:4]
     puerto_raw = IP_packet[4:6]
-    msg_raw = IP_packet[6:]
+    ttl_raw = IP_packet[6]
+    msg_raw = IP_packet[7:]
     # extraemos los valores de la direccion ip a.b.c.d -> primeros 4 bytes
     parsed_ip_packet["ip"]["a"] = ip_raw[0]
     parsed_ip_packet["ip"]["b"] = ip_raw[1]
@@ -28,6 +28,9 @@ def parse_packet(IP_packet: bytes):
 
     # extraemos el valor del puerto -> obtenemos de los 2 bytes extraidos
     parsed_ip_packet["puerto"] = int.from_bytes(puerto_raw, "big")
+
+    # guardamos el valor de ttl -> 1 byte
+    parsed_ip_packet["ttl"] = int(ttl_raw)
 
     # extraemos el mensaje que se envia
     parsed_ip_packet["mensaje"] = msg_raw.decode("utf-8")
@@ -44,13 +47,15 @@ def create_packet(parsed_IP_packet):
     c = parsed_IP_packet["ip"]["c"].to_bytes(1, "big")
     d = parsed_IP_packet["ip"]["d"].to_bytes(1, "big")
     puerto = parsed_IP_packet["puerto"].to_bytes(2, "big")
+    ttl = parsed_IP_packet["ttl"].to_bytes(1, "big")
     mensaje = parsed_IP_packet["mensaje"].encode()
     # armamos la ip concatenando los numeros a, b, c y d
-    # la idea es que el paquete quede de la forma: [Dirección IP][Puerto][mensaje]
-    return a + b + c + d + puerto + mensaje
+    # la idea es que el paquete quede de la forma: [Dirección IP][Puerto][ttl][mensaje]
+    return a + b + c + d + puerto + ttl + mensaje
 
 
 # =============== EXTRAS ===============
+# se extrae los numeros del ip y se arma
 def get_ip_from_parsed(parsed_IP_packet):
     ip_raw = parsed_IP_packet["ip"]
     a, b, c, d = ip_raw["a"], ip_raw["b"], ip_raw["c"], ip_raw["d"]
@@ -117,6 +122,12 @@ if __name__ == "__main__":
         print(f"... {name_socket} esperando mensaje ...")
         paquete_ip, _ = s.recvfrom(MAX_SIZE)  # esperamos que llegue el mensaje
         parsed_packet = parse_packet(paquete_ip)  # parseamos el mensaje recibido
+        # primero revisamos si el mensaje tiene TTL == 0
+        if parsed_packet["ttl"] == 0:
+            # si no cumple, se ignora el paquete y se imprime el mensaje
+            print(f"Se recibió paquete [{paquete_ip}] con TTL 0")
+            continue
+
         # obtenemos la direccion ip y el puerto del mensaje recibido
         destination_address = (
             get_ip_from_parsed(parsed_packet),
@@ -147,4 +158,10 @@ if __name__ == "__main__":
                 print(
                     f"redirigiendo paquete {paquete_ip} con destino final {destination_address} desde {(router_IP, router_puerto)} hacia {rutas[next_route]}\n"
                 )
-                s.sendto(paquete_ip, rutas[next_route])
+                # creamos una copia del paquete parseado
+                new_parsed = parsed_packet
+                # disminuimos en 1 su ttl
+                parsed_packet["ttl"] = parsed_packet["ttl"] - 1
+                # creamos un paquete nuevo en bytes y lo mandamos
+                new_paquete_ip = create_packet(new_parsed)
+                s.sendto(new_paquete_ip, rutas[next_route])
