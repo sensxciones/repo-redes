@@ -64,10 +64,54 @@ def create_packet(parsed_IP_packet):
     offset = parsed_IP_packet["offset"].to_bytes(4, "big")
     tamano = parsed_IP_packet["tamano"].to_bytes(4, "big")
     flag = parsed_IP_packet["flag"].to_bytes(1, "big")
-    mensaje = parsed_IP_packet["mensaje"].encode()
+    mensaje = get_message_bytes(parsed_IP_packet)
     # armamos la ip concatenando los numeros a, b, c y d
     # la idea es que el paquete quede de la forma: [Dirección IP][Puerto][ttl][mensaje]
     return a + b + c + d + puerto + ttl + id_paquete + offset + tamano + flag + mensaje
+
+
+def get_message_bytes(parsed_IP_packet):
+    mensaje = parsed_IP_packet["mensaje"]
+    if isinstance(mensaje, bytes):
+        return mensaje
+    return mensaje.encode("utf-8")
+
+
+def fragment_IP_packet(IP_packet, MTU):
+    # Caso 1: el paquete completo, incluyendo header, cabe en el enlace.
+    if len(IP_packet) <= MTU:
+        return [IP_packet]
+
+    # Caso 2: el paquete no cabe, por lo que hay que partir solo el mensaje.
+    max_message_size = MTU - HEADER_SIZE
+    if max_message_size <= 0:
+        raise ValueError("El MTU debe ser mayor que el tamano del header")
+
+    parsed_packet = parse_packet(IP_packet)
+    mensaje = get_message_bytes(parsed_packet)
+    fragments = []
+
+    for i in range(0, len(mensaje), max_message_size):
+        # Cada fragmento lleva como mensaje un trozo de largo maximo MTU - HEADER_SIZE.
+        fragment_message = mensaje[i : i + max_message_size]
+        is_last_piece = i + max_message_size >= len(mensaje)
+
+        # Offset: posicion del trozo dentro del datagrama original.
+        # Tamano: bytes del mensaje que contiene este fragmento.
+        # Flag: 1 si aun quedan fragmentos despues; 0 si este cierra el datagrama.
+        parsed_fragment = {
+            "ip": parsed_packet["ip"].copy(),
+            "puerto": parsed_packet["puerto"],
+            "ttl": parsed_packet["ttl"],
+            "id": parsed_packet["id"],
+            "offset": parsed_packet["offset"] + i,
+            "tamano": len(fragment_message),
+            "flag": 0 if is_last_piece and parsed_packet["flag"] == 0 else 1,
+            "mensaje": fragment_message,
+        }
+        fragments.append(create_packet(parsed_fragment))
+
+    return fragments
 
 
 # =============== EXTRAS ===============
