@@ -262,12 +262,18 @@ if __name__ == "__main__":
                 received_packets[packet_id] = []
             received_packets[packet_id].append(paquete_ip)
 
-            mensaje = parsed_packet["mensaje"]
             print("El mensaje es para este router!")
-            print(f"Mensaje recibido: {mensaje}")
             print(
-                f"Fragmentos/paquetes almacenados para ID {packet_id}: {len(received_packets[packet_id])}\n"
+                f"Fragmentos/paquetes almacenados para ID {packet_id}: {len(received_packets[packet_id])}"
             )
+
+            reassembled_packet = reassemble_IP_packet(received_packets[packet_id])
+            if reassembled_packet is None:
+                print("Aun no llegan todos los fragmentos.\n")
+                continue
+
+            reassembled_message = parse_packet(reassembled_packet)["mensaje"]
+            print(f"Mensaje recibido: {reassembled_message}\n")
         else:
             # si no es para el socket acutal, revisamos si el socket tiene la ruta en el archivo
             rutas = check_routes(tabla_rutas, destination_address)
