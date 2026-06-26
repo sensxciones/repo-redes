@@ -117,7 +117,7 @@ def fragment_IP_packet(IP_packet, MTU):
 
 # Reensambla fragmentos de un datagrama IP en un solo paquete
 # - Si paquete completo fue recibido lo retorna reensamblado
-# - Si faltan fragmentos retorna None.
+# - Si faltan fragmentos retorna None
 def reassemble_IP_packet(fragment_list):
     if len(fragment_list) == 0:
         return None
@@ -263,9 +263,7 @@ if __name__ == "__main__":
             received_packets[packet_id].append(paquete_ip)
 
             print("El mensaje es para este router!")
-            print(
-                f"Fragmentos/paquetes almacenados para ID {packet_id}: {len(received_packets[packet_id])}"
-            )
+            print(f"Fragmentos/paquetes almacenados para ID {packet_id}: {len(received_packets[packet_id])}")
 
             reassembled_packet = reassemble_IP_packet(received_packets[packet_id])
             if reassembled_packet is None:
