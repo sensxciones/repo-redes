@@ -70,6 +70,7 @@ def create_packet(parsed_IP_packet):
     return a + b + c + d + puerto + ttl + id_paquete + offset + tamano + flag + mensaje
 
 
+# obtiene msj en bytes del paquete parseado
 def get_message_bytes(parsed_IP_packet):
     mensaje = parsed_IP_packet["mensaje"]
     if isinstance(mensaje, bytes):
@@ -77,12 +78,15 @@ def get_message_bytes(parsed_IP_packet):
     return mensaje.encode("utf-8")
 
 
+# Divide datagramas IP en fragmentos de tamaño MTU
+# - Si cabe: retorna el paquete original en una lista de un solo elemento
+# - Si no cabe: retorna una lista con los fragmentos del paquete original
 def fragment_IP_packet(IP_packet, MTU):
-    # Caso 1: el paquete completo, incluyendo header, cabe en el enlace.
+    # Caso 1: el paquete completo, incluyendo header, cabe en el enlace
     if len(IP_packet) <= MTU:
         return [IP_packet]
 
-    # Caso 2: el paquete no cabe, por lo que hay que partir solo el mensaje.
+    # Caso 2: el paquete no cabe, por lo que hay que partir solo el mensaje
     max_message_size = MTU - HEADER_SIZE
     if max_message_size <= 0:
         raise ValueError("El MTU debe ser mayor que el tamano del header")
@@ -92,26 +96,80 @@ def fragment_IP_packet(IP_packet, MTU):
     fragments = []
 
     for i in range(0, len(mensaje), max_message_size):
-        # Cada fragmento lleva como mensaje un trozo de largo maximo MTU - HEADER_SIZE.
+        # Cada fragmento lleva como mensaje un trozo de largo maximo MTU-HEADER_SIZE
         fragment_message = mensaje[i : i + max_message_size]
         is_last_piece = i + max_message_size >= len(mensaje)
 
-        # Offset: posicion del trozo dentro del datagrama original.
-        # Tamano: bytes del mensaje que contiene este fragmento.
-        # Flag: 1 si aun quedan fragmentos despues; 0 si este cierra el datagrama.
         parsed_fragment = {
             "ip": parsed_packet["ip"].copy(),
             "puerto": parsed_packet["puerto"],
             "ttl": parsed_packet["ttl"],
             "id": parsed_packet["id"],
-            "offset": parsed_packet["offset"] + i,
-            "tamano": len(fragment_message),
-            "flag": 0 if is_last_piece and parsed_packet["flag"] == 0 else 1,
+            "offset": parsed_packet["offset"] + i, # posicion del trozo dentro del datagrama original
+            "tamano": len(fragment_message), # bytes del mensaje que contiene este fragmento
+            "flag": 0 if is_last_piece and parsed_packet["flag"] == 0 else 1, # =1 si aun quedan fragmentos despues; 0 si este cierra el datagrama
             "mensaje": fragment_message,
         }
         fragments.append(create_packet(parsed_fragment))
 
     return fragments
+
+
+# Reensambla fragmentos de un datagrama IP en un solo paquete
+# - Si paquete completo fue recibido lo retorna reensamblado
+# - Si faltan fragmentos retorna None.
+def reassemble_IP_packet(fragment_list):
+    if len(fragment_list) == 0:
+        return None
+
+    parsed_fragments = [parse_packet(fragment) for fragment in fragment_list]
+
+    # Si paquete completo: offset 0 y flag 0 => no falta nada mas
+    if len(parsed_fragments) == 1:
+        fragment = parsed_fragments[0]
+        if fragment["offset"] == 0 and fragment["flag"] == 0:
+            return fragment_list[0]
+        return None
+
+    parsed_fragments.sort(key=lambda fragment: fragment["offset"])
+
+    # verificar que 1er fragmento tenga offset 0 y que no todos los fragmentos tengan flag 1
+    if parsed_fragments[0]["offset"] != 0:
+        return None
+    if all(fragment["flag"] == 1 for fragment in parsed_fragments):
+        return None
+
+    expected_offset = 0
+    full_message = b""
+
+    for fragment in parsed_fragments:
+        # si el offset del fragmento no es el esperado o el tamaño no es el correcto, retorna None
+        if fragment["offset"] != expected_offset:
+            return None
+
+        fragment_message = get_message_bytes(fragment)
+        if len(fragment_message) != fragment["tamano"]:
+            return None
+
+        full_message += fragment_message
+        expected_offset += fragment["tamano"]
+
+    # ultimo fragmento cierra el datagrama
+    if parsed_fragments[-1]["flag"] != 0:
+        return None
+
+    first_fragment = parsed_fragments[0]
+    reassembled_packet = {
+        "ip": first_fragment["ip"].copy(),
+        "puerto": first_fragment["puerto"],
+        "ttl": first_fragment["ttl"],
+        "id": first_fragment["id"],
+        "offset": 0,
+        "tamano": len(full_message),
+        "flag": 0,
+        "mensaje": full_message,
+    }
+    return create_packet(reassembled_packet)
 
 
 # =============== EXTRAS ===============
@@ -178,6 +236,7 @@ if __name__ == "__main__":
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.bind((router_IP, router_puerto))
     state_routes = {}
+    received_packets = {}
     while True:
         name_socket = Path(tabla_rutas).stem
         print(f"... {name_socket} esperando mensaje ...")
@@ -198,9 +257,17 @@ if __name__ == "__main__":
 
         # si el mensaje recibido es para el router actual, imprimir mensaje
         if router_puerto == puerto:
+            packet_id = parsed_packet["id"]
+            if packet_id not in received_packets:
+                received_packets[packet_id] = []
+            received_packets[packet_id].append(paquete_ip)
+
             mensaje = parsed_packet["mensaje"]
             print("El mensaje es para este router!")
-            print(f"Mensaje recibido: {mensaje}\n")
+            print(f"Mensaje recibido: {mensaje}")
+            print(
+                f"Fragmentos/paquetes almacenados para ID {packet_id}: {len(received_packets[packet_id])}\n"
+            )
         else:
             # si no es para el socket acutal, revisamos si el socket tiene la ruta en el archivo
             rutas = check_routes(tabla_rutas, destination_address)
