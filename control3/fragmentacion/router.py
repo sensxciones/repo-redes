@@ -216,9 +216,6 @@ if __name__ == "__main__":
                 else:
                     next_route = state_routes[puertos]
                     state_routes[puertos] = (state_routes[puertos] + 1) % len(rutas)
-                print(
-                    f"redirigiendo paquete {paquete_ip} con destino final {destination_address} desde {(router_IP, router_puerto)} hacia {rutas[next_route][0]} con MTU {rutas[next_route][1]}\n"
-                )
                 next_hop_address, mtu = rutas[next_route]
                 # creamos una copia del paquete parseado
                 new_parsed = parsed_packet
@@ -226,4 +223,9 @@ if __name__ == "__main__":
                 parsed_packet["ttl"] = parsed_packet["ttl"] - 1
                 # creamos un paquete nuevo en bytes y lo mandamos
                 new_paquete_ip = create_packet(new_parsed)
-                s.sendto(new_paquete_ip, next_hop_address)
+                fragments = fragment_IP_packet(new_paquete_ip, mtu)
+                print(
+                    f"redirigiendo paquete {paquete_ip} con destino final {destination_address} desde {(router_IP, router_puerto)} hacia {next_hop_address} con MTU {mtu}. fragmentos: {len(fragments)}\n"
+                )
+                for fragment in fragments:
+                    s.sendto(fragment, next_hop_address)
